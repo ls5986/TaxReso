@@ -1,53 +1,113 @@
-import fitz  # PyMuPDF
-import os
+import streamlit as st
+from utils.client_sum import create_client_summary
+from utils.pdf_utils import display_pdf
+from utils.form_calculations import calculate_based_on_form
 
-def extract_bold_text_from_all_pdfs(directory_path):
-    all_bold_texts = {}
+# Rest of your code...
 
-    # Loop through all files in the specified directory
-    for filename in os.listdir(directory_path):
-        if filename.endswith(".pdf"):
-            pdf_path = os.path.join(directory_path, filename)
-            bold_texts = extract_bold_text(pdf_path)
-            all_bold_texts[filename] = bold_texts
+for i, (result, uploaded_file) in enumerate(zip(selected_client_results, selected_client_files)):
+    with st.expander(f"Document {i+1}: {uploaded_file.name}"):
+        col1, col2 = st.columns([1, 1])
 
-    return all_bold_texts
+        with col1:
+            st.write(f"Transcript Type: {result['Transcript Type']}")
+            st.write(f"Tracking Number: {result['Tracking Number']}")
+            st.write(f"Tax Period: {result['Tax Period']}")
+            st.write(f"SSN: {result['SSN']}")
 
-def extract_bold_text(pdf_path):
-    bold_texts = []
+            # Extract the form type and pass to the appropriate calculation logic
+            form_type = result['Transcript Type']
+            calculation_result = calculate_based_on_form(form_type, result)
+            st.write("Calculation Result:", calculation_result["calculation"])
 
-    # Open the PDF
-    with fitz.open(pdf_path) as pdf:
-        # Iterate through each page
-        for page_num in range(pdf.page_count):
-            page = pdf.load_page(page_num)
-            blocks = page.get_text("dict")["blocks"]
+            st.write("Income and Details:")
+            # Display relevant data in a tabular format, based on form type or result
 
-            # Iterate through each block to find spans with bold fonts
-            for block in blocks:
-                for line in block.get("lines", []):
-                    for span in line.get("spans", []):
-                        # Debugging output to understand span properties
-                        print(f"Text: '{span.get('text')}', Font Flags: {span.get('flags')}")
+        with col2:
+            st.write("Original Document:")
+            if uploaded_file.type == "application/pdf":
+                display_pdf(uploaded_file)
+            else:
+                st.text(uploaded_file.getvalue().decode("utf-8"))////
 
-                        # Check if the text is bold
-                        if span.get("flags") & 2:  # Flag 2 usually indicates bold text
-                            bold_texts.append(span.get("text"))
 
-    return bold_texts
 
-# Define the path to the 'data' folder
-data_folder_path = "data"
+                import streamlit as st
+import pandas as pd
+from utils.client_sum import create_client_summary
+from utils.pdf_utils import display_pdf
+from utils.form_extraction import extract_income_withholdings
+from utils.common import extract_float, get_last_four_ssn
 
-# Extract bold text from all PDFs in the 'data' folder
-bold_text_values = extract_bold_text_from_all_pdfs(data_folder_path)
+# Set page configuration for wider screen layout
+st.set_page_config(layout="wide")
 
-# Print the results
-for filename, bold_texts in bold_text_values.items():
-    print(f"Bolded Values Found in {filename}:")
-    if not bold_texts:
-        print("No bolded text found.")
-    else:
-        for value in bold_texts:
-            print(value)
-    print("\n")
+st.title("Client Summary")
+
+if 'results' in st.session_state:
+    results = st.session_state['results']
+    client_summary = create_client_summary(results)
+
+    unique_ssn_last_four = client_summary['SSN Last Four'].unique()
+    selected_ssn_last_four = st.selectbox("Select a client (Last 4 digits of SSN):", unique_ssn_last_four)
+
+    selected_client_summary = client_summary[client_summary['SSN Last Four'] == selected_ssn_last_four]
+
+    # Highlight unfiled returns
+    styled_df = selected_client_summary.style.apply(lambda row: ['background-color: red' if row['Return Filed'] == 'No' else '' for _ in row], axis=1)
+    st.dataframe(styled_df, use_container_width=True)
+
+    # Calculate total tax liability for all years using 'Current Balance'
+    total_balance = selected_client_summary['Balance Plus Accruals']
+    total_balance_sum = total_balance.apply(lambda x: float(x.replace('$', '').replace(',', ''))).sum()
+
+    # Calculate total projected amount owed for unfiled returns
+    total_projected = selected_client_summary[selected_client_summary['Return Filed'] == 'No']['Projected Amount Owed']
+    total_projected_sum = total_projected.apply(lambda x: float(x.replace('$', '').replace(',', ''))).sum()
+
+    # Display the calculated totals
+    st.write(f"Total Tax Liability for selected client: ${total_balance_sum:.2f}")
+    st.write(f"Total Projected Amount Owed for Unfiled Returns: ${total_projected_sum:.2f}")
+
+    # Download button for CSV of selected client summary
+    csv = selected_client_summary.to_csv(index=False)
+    st.download_button(
+        label="Download Selected Client Summary as CSV",
+        data=csv,
+        file_name=f"client_summary_{selected_ssn_last_four}.csv",
+        mime="text/csv",
+    )
+
+    # Display detailed information alongside PDF viewer
+    st.header("Detailed Document View")
+    
+    # Filter results and uploaded files based on the selected client
+    selected_client_results = [result for result in results if get_last_four_ssn(result['SSN']) == selected_ssn_last_four]
+    selected_client_files = [file for file, result in zip(st.session_state['uploaded_files'], results) if get_last_four_ssn(result['SSN']) == selected_ssn_last_four]
+
+    for i, (result, uploaded_file) in enumerate(zip(selected_client_results, selected_client_files)):
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            st.write(f"Transcript Type: {result['Transcript Type']}")
+            st.write(f"Tracking Number: {result['Tracking Number']}")
+            st.write(f"Tax Period: {result['Tax Period']}")
+            st.write(f"SSN: {result['SSN']}")
+
+            # Extract and display relevant income and withholding data
+            form_type = result['Transcript Type']
+            extracted_data = extract_income_withholdings(form_type, result['Income'])
+            if extracted_data['Income'] or extracted_data['Withholdings']:
+                st.write("Income Details:")
+                st.table(pd.DataFrame.from_dict(extracted_data['Income'], orient='index', columns=['Value']))
+                st.write("Withholdings:")
+                st.table(pd.DataFrame.from_dict(extracted_data['Withholdings'], orient='index', columns=['Value']))
+
+        with col2:
+            st.write("Original Document:")
+            if uploaded_file.type == "application/pdf":
+                display_pdf(uploaded_file)
+            else:
+                st.text(uploaded_file.getvalue().decode("utf-8"))
+else:
+    st.warning("Please upload and process transcripts first.")

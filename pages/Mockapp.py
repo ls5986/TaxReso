@@ -1,34 +1,12 @@
 import streamlit as st
-from utils.data_loader import load_data  # Ensure load_data is imported from the correct location
-
-# Set page layout
-st.set_page_config(layout="wide")
-st.markdown(
-    """
-    <style>
-        .main {
-            padding-left: 150px;
-            padding-right: 150px;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-st.title("Tax Transcript Parser")
-
-st.write("""
-Welcome to the Tax Transcript Parser.
-Use the sidebar to navigate through different pages for uploading, processing, and viewing client summaries.
-""")
+from utils.data_loader import load_data
 
 # Navigation function
 def navigate_to(page):
     st.session_state['page'] = page
 
-# Initialize session state for page navigation
 if 'page' not in st.session_state:
-    st.session_state['page'] = 'sales'  # Default to 'sales' page
+    st.session_state['page'] = 'sales'  # Default to sales
 
 # Sidebar navigation
 with st.sidebar:
@@ -46,7 +24,7 @@ with st.sidebar:
     if st.button("Admin"):
         navigate_to('admin')
 
-# Load the appropriate page based on the session state
+# Load appropriate page
 if st.session_state['page'] == 'sales':
     exec(open('pages/pages2/sales.py').read())
 elif st.session_state['page'] == 'tax_investigation':

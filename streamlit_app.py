@@ -1,11 +1,11 @@
 import streamlit as st
-import io
-import PyPDF2
 import pandas as pd
-import re
-import base64
 import requests
-from typing import Dict, List, Union
+from utils.transcript_parser import parse_transcript, flatten_dict
+from utils.pdf_utils import extract_text_from_pdf, display_pdf, process_transcripts
+from utils.tax_utils import get_irs_standards, calculate_tax, create_tax_projection
+from utils.client_sum import create_client_summary
+
 
 def extract_text_from_pdf(pdf_file):
     pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -14,15 +14,6 @@ def extract_text_from_pdf(pdf_file):
         text += page.extract_text()
     return text
 
-def flatten_dict(d, parent_key='', sep='_'):
-    items = []
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
 
 def extract_float(value: str) -> float:
     try:
@@ -31,249 +22,11 @@ def extract_float(value: str) -> float:
         return 0.0
 
 
-def get_irs_standards(household_size, county, state):
-    standards = {
-        "food_clothing_misc": 733 * household_size,
-        "housing_utilities": 2110,
-        "vehicle_ownership": 588,
-        "vehicle_operating_cost": 308,
-        "public_transportation": 217,
-        "health_insurance": 68 * household_size,
-        "prescriptions_copays": 55 * household_size,
-    }
-    return standards
-
-def calculate_tax(total_income):
-    if total_income <= 10000:
-        return total_income * 0.10
-    elif total_income <= 50000:
-        return 1000 + (total_income - 10000) * 0.15
-    else:
-        return 7000 + (total_income - 50000) * 0.25
-
-def parse_transcript(content: str) -> Dict[str, Union[str, List[Dict[str, str]]]]:
-    lines = content.split('\n')
-    
-    if "Account Transcript" in content:
-        transcript_type = "Account Transcript"
-    elif "Record of Account" in content:
-        transcript_type = "Record of Account"
-    elif "Wage and Income Transcript" in content:
-        if "Wage & Income Summary" in content and not any(form in content for form in ['W-2', '1099-MISC', '1099-NEC', '1099-G', '1099-DIV']):
-            transcript_type = "Wage and Income Summary"
-        else:
-            transcript_type = "Wage and Income Transcript"
-    else:
-        transcript_type = "Unknown"
-    
-    data = {
-        "Transcript Type": transcript_type,
-        "Tracking Number": "",
-        "Tax Period": "",
-        "SSN": "",
-        "Details": [],
-        "Income": {},
-        "Return Filed": False  # Default is False, will update if Code:150 is found
-    }
-    
-    tracking_number_pattern = re.compile(r'Tracking Number[:\s]*([\d]+)')
-    tax_period_pattern = re.compile(r'Tax Period[:\s]*([\d-]+)|TAX PERIOD[:\s]*([A-Za-z\s\d.,]+)|Tax Period Requested[:\s]*([A-Za-z\s\d.,]+)')
-    ssn_pattern = re.compile(r'SSN Provided[:\s]*([\d-]+)|TAXPAYER IDENTIFICATION NUMBER[:\s]*([\d-]+|XXX-XX-\d{4})')
-    form_pattern = re.compile(r'Form\s+([\w-]+)')
-    
-    current_form = None
-    
-    income_fields = {
-        'W-2': ['Wages, Tips and Other Compensation'],
-        '1099-MISC': ['Non-Employee Compensation', 'Medical Payments', 'Fishing Income', 'Rents', 'Royalties', 'Attorney Fees', 'Other Income', 'Substitute Payments for Dividends'],
-        '1099-NEC': ['Non-Employee Compensation'],
-        '1099-K': ['Gross Amount of Payment Card/Third Party Transactions'],
-        '1099-PATR': ['Patronage Dividends', 'Non-Patronage Distribution', 'Retained Allocations', 'Redemption Amount'],
-        '1042-S': ['Gross Income'],
-        'K-1 1065': ['Royalties', 'Ordinary Income K-1', 'Real Estate', 'Other Rental', 'Guaranteed Payments', 'Dividends', 'Interest'],
-        'K-1 1041': ['Net Rental Real Estate Income', 'Other Rental Income', 'Dividends', 'Interest', 'Long-Term Capital Gain', 'Other Portfolio and Non-Business Income'],
-        'W-2G': ['Gross Winnings'],
-        '1099-R': ['Taxable Amount'],
-        '1099-B': ['Proceeds', 'Cost or Basis'],
-        '1099-S': ['Gross Proceeds'],
-        '1099-LTC': ['Gross Long-Term Care Benefits Paid', 'Accelerated Death Benefits Paid'],
-        '3922': ['Exercise Fair Market Value per Share on Exercise Date', 'Exercise Price per Share', 'Number of Shares Transferred'],
-        'K-1 1120S': ['Dividends', 'Interest', 'Royalties', 'Ordinary Income K-1', 'Real Estate', 'Other Rental'],
-        'SSA': ['Pensions and Annuities (Total Benefits Paid)'],
-        '1099-DIV': ['Qualified Dividends', 'Cash Liquidation Distribution', 'Capital Gains', 'Ordinary Dividend'],
-        '1099-INT': ['Interest'],
-        '1099-G': ['Unemployment Compensation', 'Agricultural Subsidies', 'Taxable Grants'],
-        '1098': ['Mortgage Interest Received from Payer(s)/Borrower(s)', 'Outstanding Mortgage Principle']
-    }
-    withholding_fields = {
-        'W-2': ['Federal Income Tax Withheld'],
-        '1099-MISC': ['Tax Withheld'],
-        '1099-NEC': ['Federal Income Tax Withheld'],
-        '1099-K': ['Federal Income Tax Withheld'],
-        '1099-PATR': ['Tax Withheld'],
-        '1042-S': ['U.S. Federal Tax Withheld'],
-        'W-2G': ['Federal Income Tax Withheld'],
-        '1099-R': ['Tax Withheld'],
-        'SSA': ['Tax Withheld'],
-        '1099-DIV': ['Tax Withheld'],
-        '1099-INT': ['Tax Withheld'],
-        '1099-G': ['Tax Withheld']
-    }
-    
-    for line in lines:
-        tracking_number_match = tracking_number_pattern.search(line)
-        if tracking_number_match:
-            data["Tracking Number"] = tracking_number_match.group(1)
-            
-        tax_period_match = tax_period_pattern.search(line)
-        if tax_period_match:
-            tax_period_value = tax_period_match.group(1) or tax_period_match.group(2) or tax_period_match.group(3)
-            if tax_period_value:
-                year_match = re.search(r'\d{4}', tax_period_value)
-                if year_match:
-                    data["Tax Period"] = year_match.group()
-                else:
-                    data["Tax Period"] = "Unknown"
-        
-        ssn_match = ssn_pattern.search(line)
-        if ssn_match:
-            data["SSN"] = ssn_match.group(1) if ssn_match.group(1) else ssn_match.group(2)
-        
-        # Check if Code:150 is present, indicating the return has been filed
-        if '150' in line:
-            data["Return Filed"] = True
-        
-        form_match = form_pattern.search(line)
-        if form_match:
-            current_form = form_match.group(1)
-            if current_form not in data["Income"]:
-                data["Income"][current_form] = {"Income": {}, "Withholdings": {}}
-        
-        if ':' in line:
-            key, value = line.split(':', 1)
-            key = key.strip()
-            value = value.strip()
-            if key and value:
-                data["Details"].append({key: value})
-                if transcript_type in ["Account Transcript", "Record of Account"]:
-                    data["Income"][key] = value
-                elif transcript_type == "Wage and Income Transcript" and current_form:
-                    if key in income_fields.get(current_form, []):
-                        data["Income"][current_form]["Income"][key] = value
-                    elif key in withholding_fields.get(current_form, []):
-                        data["Income"][current_form]["Withholdings"][key] = value
-                elif transcript_type == "Wage and Income Summary":
-                    data["Income"][key] = value
-    return data
-
 
 def get_last_four_ssn(ssn: str) -> str:
     return ssn[-4:] if len(ssn) >= 4 else "Unknown"
 
-def create_tax_projection(parsed_data, household_size, county, state):
-    projection = {
-        "(TP) Income Subject to SE Tax": 0,
-        "(TP) Income Not Subject to SE Tax": 0,
-        "(TP) Withholding": 0,
-    }
-    
-    se_income_forms = ['1099-MISC', '1099-NEC', '1099-K', '1099-PATR', '1042-S', 'K-1 1065', 'K-1 1041']
-    
-    for form, data in parsed_data['Income'].items():
-        if isinstance(data, dict) and 'Income' in data:
-            if form in se_income_forms:
-                for key, value in data['Income'].items():
-                    projection["(TP) Income Subject to SE Tax"] += extract_float(value)
-            else:
-                for key, value in data['Income'].items():
-                    projection["(TP) Income Not Subject to SE Tax"] += extract_float(value)
-            
-            for key, value in data.get('Withholdings', {}).items():
-                projection["(TP) Withholding"] += extract_float(value)
-        elif form in ['ADJUSTED GROSS INCOME', 'TAXABLE INCOME']:
-            projection["(TP) Income Not Subject to SE Tax"] += extract_float(data)
-    
-    total_income = projection["(TP) Income Subject to SE Tax"] + projection["(TP) Income Not Subject to SE Tax"]
-    
-    irs_standards = get_irs_standards(household_size, county, state)
-    projected_tax = calculate_tax(total_income)
-    
-    projection["Total Income"] = total_income
-    projection["IRS Standards"] = irs_standards
-    projection["Projected Tax"] = projected_tax
-    projection["Projected Amount Owed"] = max(0, projected_tax - projection["(TP) Withholding"])
-    
-    return projection
 
-def create_client_summary(results):
-    summary_data = {}
-    for result in results:
-        year = result['Tax Period']
-        if year.isdigit() and len(year) == 4:
-            tax_year = year
-        else:
-            year_match = re.search(r'\d{4}', year)
-            tax_year = year_match.group() if year_match else 'Unknown'
-        
-        ssn = result['SSN']
-        last_four_ssn = get_last_four_ssn(ssn)
-        key = (last_four_ssn, tax_year)
-        
-        if key not in summary_data:
-            summary_data[key] = {
-            'SSN Last Four': last_four_ssn,
-            'Tax Year': tax_year,
-            'Return Filed': 'No',
-            'Filing Status': 'Unknown',
-            'Current Balance': 0,
-            'CSED Date': 'Unknown',
-            'Legal Action': 'Unknown',
-            'Projected Balance': 0,
-            'Income Types': 'Unknown',
-            }
-        
-        if result['Transcript Type'] in ["Account Transcript", "Record of Account"]:
-            summary_data[key]['Return Filed'] = 'Yes' if result['Return Filed'] else 'No'
-            summary_data[key]['Filing Status'] = result['Income'].get('FILING STATUS', 'Unknown')
-            
-            balance_plus_accruals = 0.0
-            for detail in result['Details']:
-                if '(this is not a payoff amount)' in detail:
-                    balance_plus_accruals = float(detail['(this is not a payoff amount)'].replace(',', ''))
-                    break
-            summary_data[key]['Balance Plus Accruals'] = balance_plus_accruals
-            summary_data[key]['Adjusted Gross Income'] = extract_float(result['Income'].get('ADJUSTED GROSS INCOME', '0'))
-            summary_data[key]['Taxable Income'] = extract_float(result['Income'].get('TAXABLE INCOME', '0'))
-            summary_data[key]['Tax Per Return'] = extract_float(result['Income'].get('TAX PER RETURN', '0'))
-        
-        if result['Return Filed'] == False:
-            projection = create_tax_projection(result, 1, 'Unknown', 'Unknown')
-            summary_data[key]['Projected Amount Owed'] = projection['Projected Amount Owed']
-    
-    df = pd.DataFrame(summary_data.values())
-    df['Balance Plus Accruals'] = df['Balance Plus Accruals'].apply(lambda x: f'${x:.2f}')
-    df['Adjusted Gross Income'] = df['Adjusted Gross Income'].apply(lambda x: f'${x:.2f}')
-    df['Taxable Income'] = df['Taxable Income'].apply(lambda x: f'${x:.2f}')
-    df['Tax Per Return'] = df['Tax Per Return'].apply(lambda x: f'${x:.2f}')
-    df['Projected Amount Owed'] = df['Projected Amount Owed'].apply(lambda x: f'${x:.2f}')
-    return df
-
-def display_pdf(file):
-    bytes_data = file.getvalue()
-    base64_pdf = base64.b64encode(bytes_data).decode('utf-8')
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-    st.markdown(pdf_display, unsafe_allow_html=True)
-
-def process_transcripts(transcripts: List[str]) -> List[Dict[str, Union[str, Dict]]]:
-    results = []
-    for content in transcripts:
-        parsed_data = parse_transcript(content)
-        results.append(parsed_data)
-    return results
-
-def highlight_not_filed(row):
-    color = 'red' if row['Return Filed'] == 'No' else ''
-    return ['background-color: {}'.format(color) for _ in row]
 
 def main():
     st.set_page_config(layout="wide")

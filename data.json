@@ -1,0 +1,127 @@
+{
+    "sales_rep": {
+      "leads": [
+        { "name": "John Doe", "contact": "john.doe@gmail.com", "status": "New", "TI_sale": "Pending" },
+        { "name": "Jane Smith", "contact": "jane.smith@outlook.com", "status": "Callback", "TI_sale": "Completed" },
+        { "name": "Chris Johnson", "contact": "chris.johnson@outlook.com", "status": "Inquiry", "TI_sale": "Pending" },
+        { "name": "Alex Lee", "contact": "alex.lee@gmail.com", "status": "Callback", "TI_sale": "Pending" },
+        { "name": "Laura Miller", "contact": "laura.miller@outlook.com", "status": "New", "TI_sale": "Pending" }
+      ],
+      "tasks": [
+        { "type": "collections", "client": "John Doe", "status": "Due", "amount_due": "$1500" },
+        { "type": "ti_sales", "client": "Jane Smith", "status": "TI Ready", "pending_ti_sale": "$795" },
+        { "type": "new_lead", "client": "Chris Johnson", "status": "Inquiry", "inquiry": "Tax Investigation" },
+        { "type": "call_back", "client": "Alex Lee", "status": "Pending", "callback_date": "2024-10-22" }
+      ]
+    },
+    "case_manager": {
+      "clients": [
+        { 
+          "name": "John Doe", 
+          "transcripts": [
+            { "type": "Wage & Income", "summary": "W-2 income of $50,000 with $5,000 withholding" },
+            { "type": "Account Transcript", "summary": "Outstanding tax debt: $15,000" }
+          ],
+          "TI_report": "Recommend filing Offer in Compromise",
+          "document_status": "All documents received"
+        },
+        { 
+          "name": "Jane Smith", 
+          "transcripts": [
+            { "type": "Wage & Income", "summary": "W-2 income of $75,000 with $7,000 withholding" },
+            { "type": "Account Transcript", "summary": "Outstanding tax debt: $8,000" }
+          ],
+          "TI_report": "Recommend Partial Payment Installment Agreement",
+          "document_status": "Missing 2019 Proof of Income"
+        },
+        {
+          "name": "Chris Johnson",
+          "transcripts": [
+            { "type": "Wage & Income", "summary": "1099-NEC income of $100,000 with $0 withholding" },
+            { "type": "Account Transcript", "summary": "Outstanding tax debt: $25,000" }
+          ],
+          "TI_report": "Recommend setting up Installment Agreement",
+          "document_status": "Pending 2022 tax return"
+        },
+        {
+          "name": "Alex Lee",
+          "transcripts": [
+            { "type": "Wage & Income", "summary": "W-2 income of $90,000 with $6,000 withholding" },
+            { "type": "Account Transcript", "summary": "Outstanding tax debt: $12,000" }
+          ],
+          "TI_report": "Recommend Currently Not Collectible Status",
+          "document_status": "Missing 2020 W-2"
+        },
+        {
+          "name": "Laura Miller",
+          "transcripts": [
+            { "type": "Wage & Income", "summary": "Self-employed income of $120,000 with $10,000 withholding" },
+            { "type": "Account Transcript", "summary": "Outstanding tax debt: $18,000" }
+          ],
+          "TI_report": "Recommend Offer in Compromise",
+          "document_status": "Missing Self-Employment Tax Documents"
+        }
+      ]
+    },
+    "client": {
+      "clients": [
+        {
+          "name": "John Doe",
+          "status": "TI Completed, awaiting IRS submission",
+          "outstanding_docs": ["2018 W-2", "Proof of Income"],
+          "messages": [
+            { "from": "Case Manager", "content": "Please upload your 2018 W-2 as soon as possible." }
+          ]
+        },
+        {
+          "name": "Jane Smith",
+          "status": "Pending Tax Preparation",
+          "outstanding_docs": ["2019 Proof of Income"],
+          "messages": [
+            { "from": "Case Manager", "content": "We are still missing your 2019 Proof of Income." }
+          ]
+        },
+        {
+          "name": "Chris Johnson",
+          "status": "Pending Installment Agreement Setup",
+          "outstanding_docs": ["2022 Tax Return"],
+          "messages": [
+            { "from": "Case Manager", "content": "We are waiting for your 2022 tax return." }
+          ]
+        },
+        {
+          "name": "Alex Lee",
+          "status": "TI Completed, awaiting documentation",
+          "outstanding_docs": ["2020 W-2"],
+          "messages": [
+            { "from": "Case Manager", "content": "Please provide your 2020 W-2." }
+          ]
+        },
+        {
+          "name": "Laura Miller",
+          "status": "TI Completed, Self-Employment Documents Needed",
+          "outstanding_docs": ["Self-Employment Tax Documents"],
+          "messages": [
+            { "from": "Case Manager", "content": "We still need your Self-Employment Tax documents." }
+          ]
+        }
+      ]
+    },
+    "admin": {
+      "team_performance": [
+        { "name": "Blake", "leads_converted": 12, "cases_open": 5 },
+        { "name": "Simran", "leads_converted": 9, "cases_open": 7 },
+        { "name": "Andrew", "leads_converted": 7, "cases_open": 6 },
+        { "name": "Lindsey", "leads_converted": 10, "cases_open": 4 },
+        { "name": "Rick", "leads_converted": 5, "cases_open": 3 }
+      ],
+      "case_assignments": [
+        { "case_id": "001", "client_name": "John Doe", "assigned_to": "Blake" },
+        { "case_id": "002", "client_name": "Jane Smith", "assigned_to": "Simran" },
+        { "case_id": "003", "client_name": "Chris Johnson", "assigned_to": "Andrew" },
+        { "case_id": "004", "client_name": "Alex Lee", "assigned_to": "Lindsey" },
+        { "case_id": "005", "client_name": "Laura Miller", "assigned_to": "Rick" }
+      ]
+    }
+  }
+  
